@@ -1,7 +1,7 @@
 # Yolov5 + StrongSORT with OSNet
 
 
-![result_1](assets/result_1.gif)
+![result_1](assets/demo_r.gif)
 
 <a href="https://github.com/mikel-brostrom/Yolov5_DeepSort_Pytorch/actions"><img src="https://github.com/mikel-brostrom/Yolov5_DeepSort_Pytorch/workflows/CI%20CPU%20testing/badge.svg" alt="CI CPU testing"></a>
 <br>  
