@@ -13,6 +13,18 @@ import numpy as np
 from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
+from random import randint
+
+import seaborn as sns
+import random
+# 生成调色板
+palette = sns.color_palette('hls', 30)
+def get_color(seed):
+    random.seed(seed)
+    # 从调色板中随机挑选一种颜色
+    bbox_color = random.choice(palette)
+    bbox_color = [int(255 * c) for c in bbox_color][::-1]
+    return bbox_color
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # yolov5 strongsort root directory
@@ -38,6 +50,27 @@ from trackers.multi_tracker_zoo import create_tracker
 
 # remove duplicated stream handler to avoid duplicated logging
 #logging.getLogger().removeHandler(logging.getLogger().handlers[0])
+
+# xyxy2tlwh函数  这个函数一般都会自带
+def xyxy2tlwh(x):
+    '''
+    (top left x, top left y,width, height)
+    '''
+    y = torch.zeros_like(x) if isinstance(x,
+                                          torch.Tensor) else np.zeros_like(x)
+    y[:, 0] = x[:, 0]
+    y[:, 1] = x[:, 1]
+    y[:, 2] = x[:, 2] - x[:, 0]
+    y[:, 3] = x[:, 3] - x[:, 1]
+    return y
+
+rand_color_list = []
+for i in range(0,5005):
+    r = randint(0, 255)
+    g = randint(0, 255)
+    b = randint(0, 255)
+    rand_color = (r, g, b)
+    rand_color_list.append(rand_color)
 
 @torch.no_grad()
 def run(
@@ -122,6 +155,8 @@ def run(
     #model.warmup(imgsz=(1 if pt else nr_sources, 3, *imgsz))  # warmup
     dt, seen = [0.0, 0.0, 0.0, 0.0], 0
     curr_frames, prev_frames = [None] * nr_sources, [None] * nr_sources
+    dict_box=dict()
+
     for frame_idx, (path, im, im0s, vid_cap, s) in enumerate(dataset):
         t1 = time_sync()
         im = torch.from_numpy(im).to(device)
@@ -186,6 +221,33 @@ def run(
                 # pass detections to strongsort
                 t4 = time_sync()
                 outputs[i] = tracker_list[i].update(det.cpu(), im0)
+                
+                # 添加追踪轨迹
+                if len(outputs[i]) > 0:
+                    bbox_xyxy_t = outputs[i][:, :4]  # 提取前四列  坐标
+                    # identities = outputs[i][:, -1]  # 提取最后一列 ID
+                    box_xywh = xyxy2tlwh(bbox_xyxy_t)
+                    # xyxy2tlwh是坐标格式转换，从x1, y1, x2, y2转为top left x ,top left y, w, h 具体函数看文章最后
+                    for j in range(len(box_xywh)):
+                        x_center = box_xywh[j][0] + box_xywh[j][2] / 2  # 求框的中心x坐标
+                        y_center = box_xywh[j][1] + box_xywh[j][3] / 2  # 求框的中心y坐标
+                        id = outputs[i][j][-2]
+                        center = [x_center, y_center]
+                        dict_box.setdefault(int(id.item()), []).append(center)  # 这个字典需要提前定义 dict_box = dict()
+                    # 以下为画轨迹，原理就是将前后帧同ID的跟踪框中心坐标连接起来
+                    # print(dict_box)
+                    if frame_idx > 2:
+                        for key, value in dict_box.items():
+                            for a in range(len(value) - 1):
+                                # color = COLORS_10[key % len(COLORS_10)]
+                                ID_color = get_color(key)
+                                index_start = a
+                                index_end = index_start + 1
+                                # cv2.line(im0, tuple(map(int, value[index_start])), tuple(map(int, value[index_end])),
+                                #          # map(int,"1234")转换为list[1,2,3,4]
+                                #         rand_color_list[key], thickness=2, lineType=8)  # lineType: cv.FILLED cv.LINE_4 cv.LINE_8 cv.LINE_AA
+                                cv2.circle(im0, center=tuple(map(int, value[index_start])), radius=3,  color=ID_color, thickness=-1, lineType=cv2.LINE_4)
+                
                 t5 = time_sync()
                 dt[3] += t5 - t4
 
@@ -262,10 +324,10 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov5m.pt', help='model.pt path(s)')
     parser.add_argument('--reid-weights', type=Path, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='strongsort', help='strongsort, ocsort, bytetrack')
-    parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')  
+    parser.add_argument('--tracking-method', type=str, default='ocsort', help='strongsort, ocsort, bytetrack')
+    parser.add_argument('--source', type=str, default='../demo_r.mp4', help='file/dir/URL/glob, 0 for webcam')  
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.2, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
