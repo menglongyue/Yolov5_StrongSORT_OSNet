@@ -6,7 +6,7 @@
 
 <div align="center">
 <p>
-<video id="video" controls="" src="demo_r.mp4" preload="none">
+<video id="video" controls="" src="demo_r.gif" preload="none">
 </p>
 <br>
 <div>
